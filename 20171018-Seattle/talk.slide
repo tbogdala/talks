@@ -1,0 +1,520 @@
+Writing VR Games In Go
+Things I Learned Writing Infinigrid: Escape
+18:00 18 Oct 2017
+Tags: go, gamedev, vr
+
+Timothy Bogdala
+tdb@animal-machine.com
+https://www.animal-machine.com
+@tbogdala
+
+
+
+* What is virtual reality?
+
+- Head mounted display (HMD)
+
+- Controllers
+
+- Room Scale
+
+.image images/Vive_pre.jpeg 400 _
+
+
+
+* The best experience (IMO)
+
+HTC Vive because it has all three!
+
+.image images/ezgif-2-11c77adccc.gif 480 _
+
+
+
+* HMD-only can be done (even with a PocketCHIP) but ...
+
+.image images/Crunch_Pocuolus-1024x576.jpg 480 _
+
+
+* How can you go about developing for VR?
+
+Unreal Engine 4
+
+.image images/VRTemplate_Hands04.gif 480 _
+
+
+
+* How can you go about developing for VR?
+
+Unity 3D
+
+.image images/VRSamplesLogo-800x400.jpg 480 _
+
+
+
+* How can you go about developing for VR?
+
+Build your own 3D graphics engine!
+
+.image images/30266390910_49ea5679ae_b.jpg 480 _
+
+
+
+* It can't be too bad, can it?
+
+.image images/reddit_why_no_tris.jpg 480 _
+
+
+
+* A short list of needs and wants for a VR game:
+
+- rendering pipeline (OpenGL, DirectX, Vulkan)
+- VR device library support
+- asset loading for textures, models, etc ...
+- level design tools
+- collision detection
+- networking support for multiplayer
+- audio support
+- cross platform support
+
+
+
+* Even if you have all of these parts, how can you tie them together?
+
+.image images/main-qimg-2c0f66b425461494fc4eb698844317e9.png 480 _
+
+
+
+* Before we get started on VR ...
+
+Lets take a little time to review some core concepts of OpenGL programming.
+
+.image images/warning-tmi.png
+
+
+
+* What does it take to render a single triangle in OpenGL 2+ (overview)
+
+Initialize:
+
+- Create a window and get an GL context
+- Compile a basic vertex and fragment shader into a GL program
+- Create a VAO (Vertex Array Object) -- required on 3.2+ core profiles
+- Create a VBO (Vertex Buffer Object) to hold the triangle vertex data
+- Buffer the vertex info for the triangle into the VBO
+
+Render Loop:
+
+- Set the GL viewport and clear the screen
+- Draw the triangles with DrawArrays
+
+
+
+* Create a window and get an GL context
+
+- Easily done with [[http://www.glfw.org/][GLFW]]
+- Can request a specific version of OpenGL
+- Go wrappers for the library and OpenGL already exist for [[https://github.com/go-gl/glfw][GLFW]] and for [[https://github.com/go-gl/gl][OpenGL]]
+
+(The above OpenGL library wrapper doesn't support GL ES 3.0, however ...)
+
+    glfw.Init()                                                            // initialize
+    defer glfw.Terminate()
+    glfw.WindowHint(glfw.Samples, 4)                                       // 4xMSAA
+    glfw.WindowHint(glfw.ContextVersionMajor, 3)                           // OpenGL 3.3
+    glfw.WindowHint(glfw.ContextVersionMinor, 3)
+    glfw.WindowHint(glfw.OpenglForwardCompatible, glfw.True)
+    glfw.WindowHint(glfw.OpenglProfile, glfw.OpenglCoreProfile)            // Core profile
+    window, _ := glfw.CreateWindow(640, 480, "Testing", nil, nil)
+    window.MakeContextCurrent()
+    gl.Init()                                                              // initialize GL
+
+
+
+* One small gotcha for those following closely ...
+
+Make sure to lock the goroutine doing the GLFW calls to the main OS thread. This is needed for GLFW's event dispatching. Without this you get *random* *crashes*.
+
+    func init() {
+        runtime.LockOSThread()
+    }
+
+
+
+* What are shaders? 
+
+This is a basic vertex shader written in GLSL (which looks a lot like C)
+
+.code basic_vertex.glsl
+
+Takes a vertex position in and writes a vertex position out. No transformations. No fancy fancy. This `out` parameter then goes to the fragment shader.
+
+
+
+* Fragment shaders make things pretty
+
+.code basic_fragment.glsl
+
+This takes the vertex position from the vertex shader output and derives a color from it. The color is then written to the `out` parameter `colourOut`.
+
+
+
+* The result is a simple triangle being rendered
+
+.image images/141218_getting_started_test2.jpg 480 _
+
+
+* What can be done with shaders?
+
+On a simple level, you can implement an ambient, diffuse and specular shader.
+
+.image images/opengl_shading.jpg 480 _
+
+
+
+* With enough work you can implement physically based lighting
+
+This can be based off of a metal/roughness workflow or a specular/roughness workflow.
+
+.image images/metalness_sample.jpg _ 800
+
+
+
+* Forward rendering
+
+A forward render will draw an object with each pixel (if lighting is done in the fragment shader) gets processed one time per light.
+
+.image images/forward-v2.png 400 _
+
+
+
+* Deferred rendering
+
+A deferred renderer writes information out to three or more separate display size textures and then runs another shader at the end to combine them and do all of the lighting in the last step.
+
+.image images/deferred-v2.png 400 _
+
+
+
+* Where to go for more learning resources:
+
+- The excellent [[https://learnopengl.com/][Learn OpenGL]] website!
+- Tom Dalling's [[https://www.tomdalling.com/blog/category/modern-opengl/][Modern OpenGL]] blog series
+- [[http://www.opengl-tutorial.org/][opengl-tutorial.org]]
+- The [[http://www.opengl-redbook.com/][OpenGL Red Book]]
+- My own [[https://animal-machine.com/blog/141218_getting_started_with_go_and_opengl.md][article]] on starting basic OpenGL programming with Go
+
+
+
+* So why the detour into writing 3D OpenGL code?
+
+.image images/detour-sign.png
+
+
+
+* Knowing OpenGL will help understand Valve's OpenVR SDK
+
+- Permissive license to use the binaries and can be found [[https://github.com/ValveSoftware/openvr][here]]
+- Contains compiled binaries for the libraries and header files
+- Also contains examples!
+
+.image images/openvr_sample.png 400 _
+
+
+
+* The API surface for OpenVR is daunting but you don't need most of it!
+
+In order to make a playable VR game, you only need to use two or three interfaces and only a few methods on each interface:
+
+- [[https://github.com/ValveSoftware/openvr/wiki/IVRSystem_Overview][IVRSystem]]: provides transforms for the HMD location/rotation as well as the eye offsets. This interface is also used to poll connected devices and get their transforms.
+
+- [[https://github.com/ValveSoftware/openvr/wiki/IVRCompositor_Overview][IVRCompositor]]: takes a render texture for each eye so that the frame can be rendered on the HMD. It also is the sync point in the API to lock the framerate to 90 fps.
+
+- [[https://github.com/ValveSoftware/openvr/wiki/IVRRenderModels_Overview][IVRenderModel]]: can be used to pull models and textures for the player's controllers if you wish to render the controller on screen.
+
+
+
+* With IVRSystem you can:
+
+- Get the recommended size for the OpenGL render targets for each eye when initializing the game.
+
+- Get the eye offsets from the HMD to correctly render stereo images.
+
+- Use ComputeDistortion() to generate an object the rendered textures for each eye can be projected on to mirror the look of the HMD device.
+
+- During the game loop, tracked devices can be polled for ther state using GetControllerState()
+
+
+
+* With IVRCompositor you can:
+
+- Render a frame to the HMD by submitting a render texture to each eye.
+
+- After submitting the render textures, IVRCompositor:WaitGetPoses() is called to trigger the frame update as well as updating the HMD pose and location.
+
+- With the HMD pose, all 3D objects in the scene can be projected correctly for the view.
+
+
+
+* What does it mean to render a texture to each eye?
+
+- It's a similar process to the deferred rendering process mentioned in the previous brief OpenGL tutorial.
+
+- Instead of rendering directly to the 'screen', you bind OpenGL texture objects to an OpenGL framebuffer object. Each eye then gets it's own framebuffer object.
+
+
+
+* Oh Emmmm Geee, what does this all mean?!!
+
+.image images/explodingheadmont.png
+
+
+
+* It means that with a little abstraction you can do both 3D and VR in the same game!
+
+You just need to adapt the following:
+
+- Initialization of OpenGL rendering structures (e.g. make those framebuffers or not)
+
+- Input devices for the VR controllers instead of mouse/keyboard or gamepad
+
+- Any particular camera control / movement that might be affected by HMD motion
+
+- Rendering out normally or once per eye and then combining them 
+
+
+
+* A little word about our dependencies:
+
+- Demo code in [[github.com/tbogdala/openvr-go][openvr-go]] as well as [[https://github.com/tbogdala/infinigrid][infinigrid: escape]] use my open source Go 3D graphics library called [[github.com/tbogdala/fizzle][fizzle]]. This is an experimental engine and I haven't pinned the API down yet.
+
+- My work-in-progress OpenGL user interface library [[github.com/tbogdala/eweygewey][eweygewey]] is also used. Same warnings apply.
+
+- My last own dependency project is a small collision library called [[github.com/tbogdala/glider][glider]]. It handles axis-aligned bounding boxes and spheres and is quicker than importing a physics library (like my own [[github.com/tbogdala/cubez][cubez]] and using collisions from there.)
+
+
+
+* Fizzle's 'scene' package
+
+This is the solution I've adopted to keeping a game scene organized and flexible.
+
+.image images/fizzle_scene.png 480 _
+
+
+
+* fizzle.scene.Manager
+
+- registers systems and entities for the game scene
+
+- keeps a priority sorted list of systems and updates them in order every frame
+
+- sends events to all systems such as AddSystem or RemoveSystem
+
+- handles requests for new Entity ID numbers 
+
+.image images/Air-Traffic-Controller2.jpg 300 _
+
+
+
+* fizzle.scene.System
+
+- a 'controller' like interface meant to be implemented by game systems that will need to update on a given frame update cycle (but not necessarily every frame).
+
+- examples of the fizzle.scene.System interface in the demo projects include the forward renderer, user interface system and the input systems.
+
+.image images/utah-mechanical-contractors-1103725_960_720.jpg 350 _
+
+
+
+* fizzle.scene.Entity
+
+- simply an object in the game -- not necessarily even able to move or be rendered.
+
+- the BasicEntity implementation and Entity interface only contain the following information: ID (within the scene.Manager), Name, Location and Orientation.
+
+- this means that a user defined struct or interface can be defined by client code and that Entities do not have to have a renderable object.
+
+.image images/16Pcs-Lot-Minecrafted-Steve-Alex-Zombie-Enderman-Reuben-Skeleton-Weapon-Action-font-b-Figures-b-font.jpg 300 _
+
+
+
+* By using the fizzle.scene package a pair of render and input systems can be created!
+
+- specialized systems for forward rendering and keyboard/mouse input can be initialized by default
+
+- if a flag is set, then a VR renderer and VR input system pair can be added to the scene.Manager instead
+
+.image images/lego.jpg 300 _
+
+
+* Advantage of Go's interfaces
+
+- it's easy to create small interfaces such as `CollisionEntity` that can be implemented by all Entity types that support collision detection.
+
+- an example of this in `infinigrid` is the `ShipEntity` type which, while implementing `scene.Entity` also can implement `CollisionEntity` just by defining a method for the `ShipEntity` type.
+
+- this feels very natural and keeping these interfaces small means there's less to worry about when deciding whether or not to implement the interface, because you can make your selections _a_ _la_ _carte_.
+
+
+
+* Speaking of Go... How do we interface with the OpenVR SDK?
+
+- it's a C++ library that also can work with C interfaces (the openvr_capi.h is auto-generated).
+
+- time for cgo! 
+
+.image images/superman_c.png 350 _
+
+
+
+* How to interface with C: the short version
+
+After you declare the package and just before you `import` `"C"` you can put a block of code in C style comments (/* ... */)
+
+    package openvr
+    /*
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include "openvr_capi.h"
+
+    #if defined(_WIN32)
+        #define IMPORT __declspec(dllimport)
+    #else
+        #define IMPORT
+    #endif    
+    IMPORT void VR_ShutdownInternal();
+    */
+    import "C"
+
+
+* And then you can call it in your Go code by using the `C` package:
+
+The C package makes it easy to access the functions and data declared on the C side of things.
+
+    func Shutdown() {
+        C.VR_ShutdownInternal()
+    }
+
+.image images/brain_meme_1.jpg
+
+
+
+* Okay we can import DLL functions ... what does OpenVR export?
+
+Answer: not a lot.
+
+.image images/openvr-dll-exports.png 400 _
+
+
+
+* How can we access those sweet, sweet VR functions then?
+
+We define our own C function above the import command to do the following:
+
+.code initvr.c
+
+
+
+* What does that C code do?
+
+- we call the `VR_InitInternal` function first
+- then we check to see if the DLL supports the requested IVRSystem_Version
+- finally, we request the interface by name through VR_GetGenericInterface
+
+.image images/brain_meme_2.jpg
+
+
+
+* What's inside this VR_IVRSystem_FnTable structure?
+
+Answer: a whole bunch of function pointers!
+
+.code systemvr_struct.c
+
+
+
+* If the API is a set of functions in a C struct, lets call them!
+
+We could then set up a function to access that struct from C and then call the function like so:
+
+.code bad_use_of_iSys.go
+
+* Unfortunately this will generate an error:
+
+     cannot call non-function (*_Cvar__iSystem).GetRecommendedRenderTargetSize (type *[0]byte)
+
+It turns out that cgo doesn't support calling functions from pointers in a structure.
+
+.image images/brain_meme_1.jpg 150 _
+
+
+
+* This happens to be my biggest source of frustration with making library wrappers
+
+To get around this I create a series of C functions that take the structure with the function pointers as the first parameter.
+
+.code wrapped_structptr.c
+
+
+
+* Then on the Go side I create a Go struct to wrap the C struct and define methods
+
+.code wrapped_structptr.go
+
+
+
+* And with that technique, we can wrap the rest of the OpenVR library!
+
+Using this in Go client code looks like this:
+
+    var sys *System // initialized previously
+	var m mgl.Mat4
+	var m34 mgl.Mat3x4
+
+    near := float32(0.1)
+    far := float32(100.0)
+
+	sys.GetProjectionMatrix(EyeLeft, near, far, &m)
+	sys.GetEyeToHeadTransform(EyeLeft, &m34)
+
+.image images/brain_meme_3.jpg
+
+
+
+* The last task then is to link the correct OpenVR library
+
+To do this I add some cgo directives to the primary Go file of the package within the C import comment:
+
+    #cgo CFLAGS: -I${SRCDIR}/vendored/openvr/headers -std=c99
+    #cgo windows,386 LDFLAGS: -L${SRCDIR}/vendored/openvr/bin/win32 -lopenvr_api
+    #cgo windows,amd64 LDFLAGS: -L${SRCDIR}/vendored/openvr/bin/win64 -lopenvr_api
+    #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/vendored/openvr/bin/linux64 -lopenvr_api
+    #cgo linux,386 LDFLAGS: -L${SRCDIR}/vendored/openvr/bin/linux32 -lopenvr_api
+
+This makes sure that `openvr_capi.h` can be found by the C compiler and that the vendored library binaries can be found by the linker.
+
+.image images/jackpot-018.jpg 250 _
+
+
+* Keep looking up?
+
+    "It actually feels like all of the pieces, all of the ingredients that we need, 
+    are already really here, they're just not stirred, cooked, and seasoned" 
+    -- John Carmack, Oculus Connect 4 Oct 12, 2017
+
+- we really do have access to great hardware
+- the software exists the drive this hardware and is freely available
+- now is the time to try new ideas and create totally new experiences in VR!
+
+.image images/rpo.jpg 250 _
+
+
+
+* Thanks for listening!
+
+- the main game developed for this talk is [[https://github.com/tbogdala/infinigrid][Infinigrid: Escape]].
+- my [[https://github.com/tbogdala/openvr-go][openvr]] wrapper is open to pull requests.
+
+- you can find me on [[http://twitch.tv/animalmachine][twitch.tv]]
+- or on twitter: [[https://twitter.com/tbogdala][@tbogdala]]
+- or the rest of my code on [[https://github.com/tbogdala][github]]
+- if all of that fails, drop an email: tdb@animal-machine.com
