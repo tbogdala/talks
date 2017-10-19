@@ -512,9 +512,9 @@ This makes sure that `openvr_capi.h` can be found by the C compiler and that the
 * Thanks for listening!
 
 - the main game developed for this talk is [[https://github.com/tbogdala/infinigrid][Infinigrid: Escape]].
-- my [[https://github.com/tbogdala/openvr-go][openvr]] wrapper is open to pull requests.
+- my [[https://github.com/tbogdala/openvr-go][openvr-go]] wrapper is open to pull requests.
 
-- you can find me on [[http://twitch.tv/animalmachine][twitch.tv]]
+- you can find me on [[http://twitch.tv/animalmachine][twitch.tv/animalmachine]]
 - or on twitter: [[https://twitter.com/tbogdala][@tbogdala]]
-- or the rest of my code on [[https://github.com/tbogdala][github]]
+- or the rest of my code on [[https://github.com/tbogdala][github.com/tbogdala]]
 - if all of that fails, drop an email: tdb@animal-machine.com
